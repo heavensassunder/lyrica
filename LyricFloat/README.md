@@ -1,6 +1,6 @@
 # LyricFloat
 
-A framework-only, Java 8 Android app. It observes media sessions via notification access, looks up lyrics using LRCLIB and shows a click-through floating panel. No Gradle, AndroidX, Kotlin or application libraries are used.
+A framework-only, Java 8 Android app. It observes media sessions via notification access, looks up lyrics using LRCLIB and shows a click-through floating panel. It also has seven editable colours, themes and a Canvas-drawn guitar mode with chord sheets. No Gradle, AndroidX, Kotlin or application libraries are used.
 
 ## Build in Termux
 
@@ -31,6 +31,21 @@ The output is `LyricFloat.apk`. You can alternatively use `./build.sh --install`
 
 The offset is applied to the playback position: positive values advance the lyrics. Search results and successful lyrics are cached locally (up to 200 entries).
 
+## Themes
+
+Open **Theme / colors** in the app. Tap any of the seven swatch buttons to open the live picker: drag the hue bar, touch the saturation/value square, set alpha, or type `#RRGGBB` / `#AARRGGBB`. The sample line and the running overlay update immediately. **Cancel** restores the previous colour. The seven presets replace all colours; **Save current as theme** stores colours, font and outline as JSON in SharedPreferences, and **Saved themes** applies or deletes them. The font selector and outline slider also apply live.
+
+## Guitar mode
+
+Turn on **Guitar mode**, then start the overlay. It uses 95% of the screen width and 50-90% of its height (default 75%). **Move overlay** still drags it and restores click-through when turned off. The fixed top bar shows the current and next chord with a progress bar, and `NOW` diagrams can be enabled. Lyrics scroll so the current line sits about 30% down; earlier lines fade. The first unconfigured launch of a song shows a no-chords notice while the synced lyrics still scroll.
+
+- **Import chord sheet** accepts a chord line above each lyric line, ChordPro `[Am]inline` chords, and `[Verse]` / `Verse 1:` labels. Paste from the clipboard or share text to LyricFloat. **Preview alignment** reports matches and interpolates unmatched lines before saving. The result is stored as `files/chords/<sha256>.json`, using the same title cleaning and artist/track hash convention as the lyrics cache.
+- **Record chords** shows the sheet's chord buttons plus **Add chord**. While the song plays, each tap stores the chord at the current position minus the reaction delay (default 150 ms). Recorded changes can be nudged by 50 ms or deleted.
+- **Edit chord sheet** opens each line; place the cursor and add a chord, or edit a chord's name, character offset and exact recorded time.
+- **Export / share chord sheet** sends a plain-text chord-over-lyrics sheet through any text app; shared text can be imported back.
+
+Transpose (-11 to +11) and capo (0-12) only change what is displayed; the stored chords stay in concert pitch. **Prefer flats**, **Simplify chords**, diagram visibility/size and the separate chord timing offset are in **Guitar settings**. **Test / exit test guitar mode** previews a built-in five-line sample without music.
+
 ## Limitations
 
 - Only apps that expose media sessions to Android's notification listener can be detected; providers may omit metadata, timestamps, duration or playback controls. If several sessions play at once, the first playing session reported by Android wins.
@@ -38,3 +53,6 @@ The offset is applied to the playback position: positive values advance the lyri
 - Android 12+ blocks touches through untrusted overlays above 80% window opacity; normal click-through mode caps it at 80%, even when the slider is set higher. Other overlays can also affect Android's combined obscuring-opacity rules. Edit mode is intentionally touchable.
 - The operating system or device manufacturer may restrict foreground services, notification listeners, overlays, or background operation. Start the overlay manually after process death or reboot. Full-screen/security-sensitive apps may hide or block overlays.
 - Test mode repeats sample lyrics every 25 seconds; press the test button again to return to detected music. Drag placement is stored in pixels and can need adjustment after rotation or a display-size change.
+- Guitar chord recognition accepts common roots, `m`, `maj`, `min`, `dim`, `aug`, `sus2`, `sus4`, `addN`, numeric extensions and slash basses. Unusual symbols (`M7`, `6/9`, parentheses, `N.C.`) are ignored or imported as text. Diagrams come from movable E/A-form shapes; unknown or slash chords show only the name. Capo display assumes standard tuning.
+- Alignment is a best-effort fuzzy match in forward order. Covers, repeated lines, ad-libs and sheets whose lyrics differ from LRCLIB can need the manual editor or recorded times. A sheet with no matched lines gets an estimated four-second line cadence and is marked "Timing estimated". Unsynchronised lyrics scroll in guitar layout at the same estimated cadence.
+- The click-through overlay cannot receive a tap, so the no-chords notice is a prompt to open LyricFloat rather than an overlay button. Sharing text only attaches to the song detected when the import screen opens.

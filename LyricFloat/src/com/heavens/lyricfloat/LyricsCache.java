@@ -14,11 +14,14 @@ public final class LyricsCache {
     private final File dir;
     public LyricsCache(Context c) { dir = new File(c.getFilesDir(), "lyrics"); }
     private File file(String artist, String track) throws Exception {
-        String key = (artist.trim() + "\n" + track.trim()).toLowerCase(Locale.ROOT);
+        return new File(dir, songHash(artist, track) + ".json");
+    }
+    public static String songHash(String artist, String track) throws Exception {
+        String key = ((artist == null ? "" : artist.trim()) + "\n" + (track == null ? "" : track.trim())).toLowerCase(Locale.ROOT);
         byte[] hash = MessageDigest.getInstance("SHA-256").digest(key.getBytes(StandardCharsets.UTF_8));
         StringBuilder name = new StringBuilder();
         for (byte b : hash) name.append(String.format(Locale.ROOT, "%02x", b & 255));
-        return new File(dir, name.toString() + ".json");
+        return name.toString();
     }
     public synchronized LyricsFetcher.Result get(String artist, String track) {
         try {

@@ -30,14 +30,20 @@ import java.util.List;
 public class OverlayService extends Service {
     public static final String ACTION_SETTINGS = "com.heavens.lyricfloat.SETTINGS";
     public static final String ACTION_TEST = "com.heavens.lyricfloat.TEST";
+    public static final String ACTION_TEST_GUITAR = "com.heavens.lyricfloat.TEST_GUITAR";
+    public static final String ACTION_CHORDS = "com.heavens.lyricfloat.CHORDS";
     public static final String ACTION_STOP = "com.heavens.lyricfloat.STOP";
-    public static volatile boolean running, editing;
+    public static volatile boolean running, editing, testing;
     public static volatile String lyricStatus = "Waiting for music";
     private WindowManager wm;
     private WindowManager.LayoutParams params;
     private LinearLayout panel;
     private final TextView[] views = new TextView[5];
     private TextView status;
+    private GuitarView guitar;
+    private ChordStore chordStore;
+    private ChordSheet storedSheet;
+    private String guitarStyleKey = "";
     private Prefs prefs;
     private LyricsFetcher fetcher;
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -55,12 +61,12 @@ public class OverlayService extends Service {
     private final Runnable tick = new Runnable() {
         @Override public void run() {
             render();
-            if (visible && (test || SongState.get().playing)) handler.postDelayed(this, 100);
+            if (visible && (test || SongState.get().playing)) handler.postDelayed(this, prefs.guitar() ? 60 : 100);
         }
     };
     @Override public void onCreate() {
         super.onCreate();
-        running = true; prefs = new Prefs(this); fetcher = new LyricsFetcher(this);
+        running = true; prefs = new Prefs(this); fetcher = new LyricsFetcher(this); chordStore = new ChordStore(this);
         NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         nm.createNotificationChannel(new NotificationChannel("overlay", "Lyric overlay", NotificationManager.IMPORTANCE_LOW));
         PendingIntent open = PendingIntent.getActivity(this, 0, new Intent(this, MainActivity.class), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
@@ -81,8 +87,10 @@ public class OverlayService extends Service {
     private void createPanel() {
         panel = new LinearLayout(this); panel.setOrientation(LinearLayout.VERTICAL);
         panel.setGravity(Gravity.CENTER); panel.setPadding(dp(12), dp(8), dp(12), dp(8));
+        guitar = new GuitarView(this, prefs); guitar.setVisibility(View.GONE);
+        panel.addView(guitar, new LinearLayout.LayoutParams(-1, 0, 1));
         for (int i = 0; i < 5; i++) {
-            TextView v = new TextView(this); v.setTextColor(Color.WHITE); v.setGravity(Gravity.CENTER);
+            TextView v = new OutlineTextView(this); v.setTextColor(Color.WHITE); v.setGravity(Gravity.CENTER);
             v.setMaxLines(2); v.setShadowLayer(dp(3), 0, dp(1), Color.BLACK);
             views[i] = v; panel.addView(v, new LinearLayout.LayoutParams(-1, -2));
         }
@@ -120,17 +128,33 @@ public class OverlayService extends Service {
         params.alpha = Math.max(.2f, Math.min(1f, prefs.overlayAlpha() / 100f));
         // Android 12+ blocks touches through an untrusted overlay above 0.8 opacity.
         if (Build.VERSION.SDK_INT >= 31 && !editing) params.alpha = Math.min(.8f, params.alpha);
-        params.width = dp(prefs.width());
+        android.util.DisplayMetrics metrics = getResources().getDisplayMetrics();
+        params.width = prefs.guitar() ? (int) (metrics.widthPixels * .95f) : dp(prefs.width());
+        params.height = prefs.guitar() ? (int) (metrics.heightPixels * prefs.guitarHeight() / 100f) : WindowManager.LayoutParams.WRAP_CONTENT;
         GradientDrawable bg = new GradientDrawable();
-        bg.setColor(Color.argb(Math.max(0, Math.min(255, prefs.panelAlpha() * 255 / 100)), 12, 12, 16));
+        int panelColor = prefs.color(3);
+        bg.setColor(Color.argb(Color.alpha(panelColor) * Math.max(0, Math.min(100, prefs.panelAlpha())) / 100,
+                Color.red(panelColor), Color.green(panelColor), Color.blue(panelColor)));
         bg.setCornerRadius(dp(16));
         if (editing) bg.setStroke(dp(2), Color.CYAN);
         panel.setBackground(bg);
         for (int i = 0; i < 5; i++) {
             views[i].setTextSize(i == 2 ? prefs.textSizeSp() : Math.max(10, prefs.textSizeSp() - 4));
-            views[i].setTypeface(null, i == 2 ? Typeface.BOLD : Typeface.NORMAL);
+            Typeface face = prefs.font() == 1 ? Typeface.SERIF : prefs.font() == 2 ? Typeface.MONOSPACE : Typeface.SANS_SERIF;
+            int style = prefs.font() == 3 ? Typeface.BOLD_ITALIC : i == 2 ? Typeface.BOLD : Typeface.NORMAL;
+            views[i].setTypeface(face, style);
+            views[i].setTextColor(prefs.color(i == 2 ? 0 : 1));
+            ((OutlineTextView) views[i]).setOutline(prefs.color(2), dp(prefs.outline()));
+            if (prefs.outline() > 0) views[i].setShadowLayer(dp(prefs.outline()), 0, dp(1), prefs.color(2));
+            else views[i].setShadowLayer(0, 0, 0, Color.TRANSPARENT);
             views[i].setAlpha(i == 2 ? 1f : (i == 1 || i == 3 ? .55f : .3f));
         }
+        status.setTextColor(prefs.color(1));
+        guitar.setVisibility(prefs.guitar() ? View.VISIBLE : View.GONE);
+        guitar.updateStyle();
+        // Only re-measure rows when a setting that affects layout or chord spelling changes.
+        String style = prefs.guitarSize() + "|" + prefs.font() + "|" + prefs.transpose() + "|" + prefs.capo() + "|" + prefs.flats() + "|" + prefs.simplify();
+        if (!style.equals(guitarStyleKey)) { guitarStyleKey = style; refreshGuitar(); }
         updateWindow(); lastIndex = Integer.MIN_VALUE; render();
     }
     private void setStatus(String text) { lyricStatus = text; SongState.notifyChanged(this); }
@@ -140,6 +164,8 @@ public class OverlayService extends Service {
         if (!key.equals(songKey)) {
             songKey = key; final int request = ++generation;
             parser = null; plain.clear(); lastIndex = Integer.MIN_VALUE;
+            storedSheet = s.title.isEmpty() ? null : chordStore.load(s.title, s.artist);
+            refreshGuitar();
             if (s.title.trim().isEmpty()) { setStatus("Waiting for music"); }
             else {
                 setStatus("Searching lyrics...");
@@ -152,12 +178,30 @@ public class OverlayService extends Service {
                             for (String line : r.text.split("\\r?\\n")) if (!line.trim().isEmpty()) plain.add(line.trim());
                             setStatus("No synced lyrics for this song.");
                         }
-                        lastIndex = Integer.MIN_VALUE; updateVisibility(); restartLoop(); render();
+                        refreshGuitar(); lastIndex = Integer.MIN_VALUE; updateVisibility(); restartLoop(); render();
                     }
                 });
             }
         }
         updateVisibility(); restartLoop(); render();
+    }
+    private void refreshGuitar() {
+        if (guitar == null) return;
+        ChordSheet shown = storedSheet;
+        if (shown == null && parser != null) shown = ChordSheet.fromLyrics(parser.lines());
+        if (shown == null && !plain.isEmpty()) {
+            shown = new ChordSheet();
+            // Unsynchronised lyrics have no real timing: use a gentle 4 s cadence for the guitar layout only.
+            for (String text : plain) {
+                ChordSheet.ChordLine line = new ChordSheet.ChordLine(); line.text = text;
+                line.timeMs = (long) shown.lines.size() * 4000; shown.lines.add(line);
+            }
+        }
+        guitarStyleKey = prefs.guitarSize() + "|" + prefs.font() + "|" + prefs.transpose() + "|" + prefs.capo() + "|" + prefs.flats() + "|" + prefs.simplify();
+        guitar.setSheet(shown, storedSheet == null);
+    }
+    @Override public void onConfigurationChanged(android.content.res.Configuration config) {
+        super.onConfigurationChanged(config); applySettings(); updateVisibility(); restartLoop();
     }
     private void updateVisibility() {
         if (panel == null) return;
@@ -171,6 +215,13 @@ public class OverlayService extends Service {
     private void render() {
         if (panel == null) return;
         SongState.Snapshot s = SongState.get();
+        if (prefs.guitar()) {
+            for (TextView v : views) v.setVisibility(View.GONE);
+            status.setVisibility(View.GONE);
+            guitar.update(test ? (android.os.SystemClock.elapsedRealtime() - testStart) % 25000 : s.getCurrentPositionMs(), test || s.playing, lyricStatus);
+            return;
+        }
+        status.setVisibility(View.VISIBLE);
         int index = parser == null ? -1 : parser.indexForPosition(test ? (android.os.SystemClock.elapsedRealtime() - testStart) % 25000 : s.getCurrentPositionMs(), prefs.syncOffsetMs());
         boolean changed = index != lastIndex;
         if (parser != null) {
@@ -207,21 +258,32 @@ public class OverlayService extends Service {
             boolean newEdit = intent.getBooleanExtra("edit", editing);
             if (editing && !newEdit) prefs.position(params.x, params.y);
             editing = newEdit; applySettings(); updateVisibility(); restartLoop();
+        } else if (intent != null && ACTION_CHORDS.equals(intent.getAction())) {
+            if (!test) { SongState.Snapshot s = SongState.get(); storedSheet = chordStore.load(s.title, s.artist); refreshGuitar(); render(); }
         } else if (intent != null && ACTION_TEST.equals(intent.getAction()) && test) {
-            test = false; songKey = ""; songChanged();
-        } else if (intent != null && ACTION_TEST.equals(intent.getAction())) {
-            test = true; ++generation; plain.clear();
+            test = false; testing = false; songKey = ""; songChanged();
+        } else if (intent != null && (ACTION_TEST.equals(intent.getAction()) || ACTION_TEST_GUITAR.equals(intent.getAction()))) {
+            test = true; testing = true; ++generation; plain.clear();
             parser = new LrcParser("[00:00.00]This is LyricFloat\n[00:05.00]Drag me into place\n[00:10.00]Your music keeps playing\n[00:15.00]Lyrics follow along\n[00:20.00]Enjoy the song");
-            testStart = android.os.SystemClock.elapsedRealtime(); lastIndex = Integer.MIN_VALUE;
+            storedSheet = null;
+            if (ACTION_TEST_GUITAR.equals(intent.getAction())) {
+                storedSheet = ChordSheet.fromLyrics(parser.lines());
+                String[] chords = {"C", "G", "Am", "F", "C"};
+                for (int i = 0; i < storedSheet.lines.size() && i < chords.length; i++) {
+                    storedSheet.lines.get(i).chords.add(new ChordSheet.ChordPlacement(chords[i], 0, -1));
+                }
+                storedSheet.lines.get(0).section = "Verse";
+            }
+            refreshGuitar(); testStart = android.os.SystemClock.elapsedRealtime(); lastIndex = Integer.MIN_VALUE;
             setStatus("Test lyrics"); updateVisibility(); restartLoop();
         } else if (test) {
-            test = false; songKey = ""; songChanged();
+            test = false; testing = false; songKey = ""; songChanged();
         }
         return START_NOT_STICKY;
     }
     @Override public void onDestroy() {
         if (editing && params != null && prefs != null) prefs.position(params.x, params.y);
-        running = false; editing = false; generation++; handler.removeCallbacks(tick);
+        running = false; editing = false; testing = false; generation++; handler.removeCallbacks(tick);
         if (fetcher != null) fetcher.shutdown();
         try { unregisterReceiver(receiver); } catch (Exception ignored) { }
         if (wm != null && panel != null) { try { wm.removeView(panel); } catch (RuntimeException ignored) { } }
