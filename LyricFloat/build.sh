@@ -32,9 +32,21 @@ need_tool() {
 # aapt2 is preferred, but FloatingPet's aapt can also generate R.java and package resources.
 AAPT2=""; AAPT=""
 AAPT2=$(find_tool aapt2) || AAPT2=""
-if [ -z "$AAPT2" ]; then AAPT=$(find_tool aapt) || AAPT=""; fi
+if [ -n "$AAPT2" ] && ! "$AAPT2" version >/dev/null 2>&1; then
+    echo "Warning: $AAPT2 cannot run; trying aapt instead." >&2
+    AAPT2=""
+fi
+if [ -z "$AAPT2" ]; then
+    AAPT=$(find_tool aapt) || AAPT=""
+    if [ -n "$AAPT" ] && ! "$AAPT" version >/dev/null 2>&1; then
+        echo "Warning: $AAPT cannot run." >&2
+        AAPT=""
+    fi
+fi
 if [ -z "$AAPT2" ] && [ -z "$AAPT" ]; then
-    echo 'Missing aapt/aapt2. Install with: pkg install aapt' >&2; missing=1
+    echo 'Missing or broken aapt/aapt2. Try: pkg update && pkg upgrade -y' >&2
+    echo 'If needed, reinstall with: pkg reinstall aapt abseil-cpp libprotobuf' >&2
+    missing=1
 fi
 need_tool d8 d8 D8
 need_tool apksigner apksigner APKSIGNER
