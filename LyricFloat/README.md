@@ -4,19 +4,22 @@ A framework-only, Java 8 Android app. It observes media sessions via notificatio
 
 ## Build in Termux
 
-Use a recent Termux from F-Droid or GitHub, not the obsolete Play Store build. Available packages and architecture support can vary with Termux version and repository. On a 32-bit ARM device the Java compiler and DEX tool can be memory-intensive; not all current Termux/OpenJDK builds necessarily support every old device.
+If you built FloatingPet on this phone, the script can reuse its existing SDK at `~/android-sdk/platforms/android-34/android.jar`. Like FloatingPet, it looks for `d8` in `~/android-sdk/build-tools` and uses a 512 MB Java heap by default. It finds `aapt2`, `zipalign`, and `apksigner` on PATH or in the SDK build-tools; if `aapt2` is unavailable it can use `aapt` instead. Missing tools are reported with their Termux package names.
+
+From a fresh checkout:
 
 ```sh
-pkg update
-pkg install aapt ecj d8 apksigner openjdk-17 zip
-cd LyricFloat
-# Copy the Android SDK platform jar from platforms/android-34/android.jar to ~/android.jar.
-# Alternatively: export ANDROID_JAR=/path/to/platforms/android-34/android.jar
-chmod +x build.sh
-./build.sh
+cd ~
+git clone --branch arena/0bb2cbe3-lyrica https://github.com/heavensassunder/lyrica.git lyrica
+cd ~/lyrica/LyricFloat
+bash build.sh --open
 ```
 
-The platform jar must be API 34 or newer for the `specialUse` manifest attribute, despite targeting API 33. Some SDK-style Termux packages may provide it; otherwise copy it from a normal Android SDK or a project containing the *platform* jar. An installed app's `base.apk` is not a substitute. The output is `LyricFloat.apk`. Run `./build.sh --open` to open the package installer, or `./build.sh --install` with Shizuku and a working `rish` setup. The latter requires the APK path to be readable by the Shizuku shell; copy it to shared storage and install from there if needed. The script creates `~/.lyricfloat-debug.keystore` once with a publicly known debug password. Keep it for upgrade compatibility; it is not suitable for release signing.
+For a later build, just run the last two commands. `--open` opens the package installer; omit it to build only. If a tool is missing, install the package named in the error, for example `pkg install aapt d8 apksigner openjdk-17 zip`. If neither `javac` nor `ecj` is present, install `openjdk-17` or `ecj`. Available packages and architecture support can vary with the Termux version and repository, especially on older 32-bit ARM devices.
+
+The platform jar must be API 34 or newer for the `specialUse` manifest attribute, despite targeting API 33. The script checks the FloatingPet SDK path first and then `~/android.jar`. To use another platform jar, run `ANDROID_JAR=/path/to/android.jar bash build.sh --open`. An installed app's `base.apk` is not a substitute. Unlike FloatingPet's packaging step, LyricFloat links resources against the API 34 platform jar rather than `/system/framework/framework-res.apk`, so builds also work on devices whose own framework predates API 34.
+
+The output is `LyricFloat.apk`. You can alternatively use `./build.sh --install` with Shizuku and a working `rish` setup. The APK path must be readable by the Shizuku shell; copy it to shared storage and install from there if needed. The script creates `~/.lyricfloat-debug.keystore` once with a publicly known debug password. Keep it for upgrade compatibility; it is not suitable for release signing.
 
 ## First use
 
