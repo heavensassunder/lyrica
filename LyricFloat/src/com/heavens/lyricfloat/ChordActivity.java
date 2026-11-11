@@ -36,6 +36,7 @@ public class ChordActivity extends Activity {
     private boolean loading, alive, hadSheet;
     private LinearLayout root;
     private EditText input;
+    private LinearLayout recordedList;
     private final Set<String> available = new LinkedHashSet<String>();
     private int dp(int n) { return (int) (getResources().getDisplayMetrics().density * n + .5f); }
     @Override public void onCreate(Bundle state) {
@@ -137,17 +138,23 @@ public class ChordActivity extends Activity {
         for (final String chord : available) button(chordButtons, chord, new Runnable() { public void run() { record(chord); } });
         button(root, "Add chord", new Runnable() { public void run() { pickChord(new Chosen() { public void selected(String chord) { available.add(chord); render(); } }); } });
         root.addView(text("Recorded changes", 19));
-        int count = 0;
+        recordedList = new LinearLayout(this); recordedList.setOrientation(LinearLayout.VERTICAL); root.addView(recordedList);
+        rebuildRecorded();
+    }
+    /** Only the recorded list is rebuilt, so repeated taps keep the scroll position and stay fast. */
+    private void rebuildRecorded() {
+        if (recordedList == null) return;
+        recordedList.removeAllViews(); int count = 0;
         for (final ChordSheet.ChordLine line : sheet.lines) for (final ChordSheet.ChordPlacement c : new ArrayList<ChordSheet.ChordPlacement>(line.chords)) {
             if (c.timeMs < 0) continue; count++;
-            LinearLayout row = new LinearLayout(this); row.setOrientation(LinearLayout.HORIZONTAL); root.addView(row);
+            LinearLayout row = new LinearLayout(this); row.setOrientation(LinearLayout.HORIZONTAL); recordedList.addView(row);
             TextView name = text(c.name + "  " + String.format(Locale.ROOT, "%.2fs", c.timeMs / 1000.0), 15);
             row.addView(name, new LinearLayout.LayoutParams(0, -2, 1));
-            button(row, "−50", new Runnable() { public void run() { c.timeMs = Math.max(0, c.timeMs - 50); if (save()) render(); } });
-            button(row, "+50", new Runnable() { public void run() { c.timeMs += 50; if (save()) render(); } });
-            button(row, "×", new Runnable() { public void run() { line.chords.remove(c); if (save()) render(); } });
+            button(row, "−50", new Runnable() { public void run() { c.timeMs = Math.max(0, c.timeMs - 50); if (save()) rebuildRecorded(); } });
+            button(row, "+50", new Runnable() { public void run() { c.timeMs += 50; if (save()) rebuildRecorded(); } });
+            button(row, "×", new Runnable() { public void run() { line.chords.remove(c); if (save()) rebuildRecorded(); } });
         }
-        if (count == 0) root.addView(text("No recorded changes yet.", 14));
+        if (count == 0) recordedList.addView(text("No recorded changes yet.", 14));
     }
     private void record(String chord) {
         if (!validSong()) return;
@@ -162,7 +169,7 @@ public class ChordActivity extends Activity {
         long end = index + 1 < sheet.lines.size() ? sheet.lines.get(index + 1).timeMs : Math.max(time + 1, line.timeMs + 4000);
         int offset = (int) (Math.max(0, Math.min(end - line.timeMs, time - line.timeMs)) * line.text.length() / Math.max(1, end - line.timeMs));
         line.chords.add(new ChordSheet.ChordPlacement(chord, offset, time));
-        if (save()) render();
+        if (save()) { rebuildRecorded(); message(chord + " at " + String.format(Locale.ROOT, "%.1fs", time / 1000.0)); }
     }
     private void editScreen() {
         if (loading && sheet.lines.isEmpty()) root.addView(text("Loading lyrics…", 14));
