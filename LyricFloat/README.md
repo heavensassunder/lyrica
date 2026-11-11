@@ -31,6 +31,15 @@ The output is `LyricFloat.apk`. You can alternatively use `./build.sh --install`
 
 The offset is applied to the playback position: positive values advance the lyrics. Search results and successful lyrics are cached locally (up to 200 entries).
 
+## If it says "Waiting for music"
+
+Open LyricFloat and read the **Media:** line under **Now playing**. It reports whether the listener is connected, how many sessions are visible and the current track. **Refresh media session** asks the listener to re-query immediately; the listener also reconciles every three seconds and requests a system rebind after a disconnect.
+
+- **Notification access: Not granted** or **Listener disconnected**: open **Notification access**, turn LyricFloat off and back on, then return to the app. Installing an APK or an OEM battery manager can silently drop this permission.
+- **No active media sessions** while audio plays: the player is not exposing a media session (or it was force-stopped/swiped away). Reopen the player, start playback from inside it, and tap Refresh.
+- **Playing: …** but the overlay still waits: stop and restart the overlay so it reloads the current state.
+- Exclude LyricFloat from aggressive battery optimisation and "app sleep" on OEM ROMs; notification listeners and overlays are often killed otherwise.
+
 ## Themes
 
 Open **Theme / colors** in the app. Tap any of the seven swatch buttons to open the live picker: drag the hue bar, touch the saturation/value square, set alpha, or type `#RRGGBB` / `#AARRGGBB`. The sample line and the running overlay update immediately. **Cancel** restores the previous colour. The seven presets replace all colours; **Save current as theme** stores colours, font and outline as JSON in SharedPreferences, and **Saved themes** applies or deletes them. The font selector and outline slider also apply live.

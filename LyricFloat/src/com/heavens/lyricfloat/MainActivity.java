@@ -37,7 +37,7 @@ public class MainActivity extends Activity {
     private TextView notificationStatus, overlayStatus, postStatus, now;
     private Button start;
     private Switch move, guitarMode;
-    private TextView chordSong;
+    private TextView chordSong, media;
     private final Button[] swatches = new Button[Prefs.COLOR_KEYS.length];
     private Spinner fontSpinner;
     private SeekBar outlineBar;
@@ -63,6 +63,8 @@ public class MainActivity extends Activity {
             else Toast.makeText(MainActivity.this, "Not required on this Android version", Toast.LENGTH_SHORT).show();
         } });
         LinearLayout playback = card(root, "Now playing"); now = text("", 15); playback.addView(now);
+        media = text("", 13); playback.addView(media);
+        button(playback, "Refresh media session", new Runnable() { public void run() { MediaListenerService.refreshNow(); refresh(); } });
         start = button(root, "Start overlay", new Runnable() { public void run() {
             if (OverlayService.running) { stopService(new Intent(MainActivity.this, OverlayService.class)); OverlayService.editing = false; refresh(); }
             else startOverlay(null);
@@ -254,6 +256,7 @@ public class MainActivity extends Activity {
         overlayStatus.setText("Overlay permission: " + (Settings.canDrawOverlays(this) ? "Granted" : "Not granted"));
         postStatus.setText("Post notifications: " + (Build.VERSION.SDK_INT < 33 || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED ? "Granted / not required" : "Not granted"));
         SongState.Snapshot s = SongState.get();
+        if (media != null) media.setText("Media: " + MediaListenerService.status);
         if (chordSong != null) chordSong.setText("Current song: " + (s.title.isEmpty() ? "Nothing detected" : s.title + (s.artist.isEmpty() ? "" : " — " + s.artist)));
         now.setText((s.title.isEmpty() ? "Nothing detected" : s.title + (s.artist.isEmpty() ? "" : "\n" + s.artist)) + "\n" + OverlayService.lyricStatus + (s.playing ? " · Playing" : " · Paused"));
         start.setText(OverlayService.running ? "Stop overlay" : "Start overlay");
